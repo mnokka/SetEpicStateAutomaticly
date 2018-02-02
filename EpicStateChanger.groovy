@@ -4,10 +4,14 @@ When new Story has added to Epic, change Epic state back to In Progress
 
 Epic forward movements are following automaticly linked Stories movements. 
 This listener will implement "In case Epic has new Story added, it state should be changed automaticly to back to In Progress state".
- Workflow do have buttons for this but automation is needed
+Workflow do have buttons for this but automation is needed
  
- To be implemented as a JIRA listener (for Issue Created event and Parent Issue edited )
+To be implemented as a JIRA listener (for Issue Created event and Parent Issue edited )
  
+Does the following Epic state backwards movements:
+Review ---> In Progress 
+QA --> Review ---> In Progress
+
  
  January 2018 mika.nokka1@gmail.com
  */
@@ -54,6 +58,7 @@ This listener will implement "In case Epic has new Story added, it state should 
  // CONFIGURATIONS:
  def AdminUser = "mikanokka" // this user must be rights to drive statuses
  def ReviewToInProgress=71   // Review ---> In Progress
+ def QAToReview=81   // QA ---> Review
  // END OF CONFIGURATIONS
  
  def changeManager = ComponentAccessor.getChangeHistoryManager();
@@ -66,7 +71,7 @@ This listener will implement "In case Epic has new Story added, it state should 
  
  // set logging to Jira log
  def log = Logger.getLogger("EpicStateChanger") // change for customer system
- log.setLevel(Level.DEBUG) // DEBUG INFO
+ log.setLevel(Level.INFO) // DEBUG INFO
   
  
  log.debug("---------- EpicStateChanger started -----------")
@@ -90,37 +95,51 @@ This listener will implement "In case Epic has new Story added, it state should 
 		 log.debug("Current Issue's Epic Status:"+status)
 		 //EpicIssue.setStatus("In Progress")
 		 if (status=="In Progress") {
-			 log.debug("Epic In Progress, do nothing")
+			 log.info("Epic In Progress, do nothing")
+			 return
 		 }
+		 
+		 
+		 EpicId=EpicIssue.id
+		 log.debug("EpicID :"+EpicId)
+		 
+		 // sort user for the transit
+		 assignee=EpicIssue.getAssignee()
+		 if (assignee) {
+			 log.debug("Epic has assignee OK:"+assignee)
+			 transitUser=assignee
+		 }
+		 else {
+			 log.info("Epic Has NO assignee, usign default user")
+			 ComponentAccessor.getJiraAuthenticationContext().setLoggedInUser(util.getUserByName("${AdminUser}"))
+			 whoisthis2=ComponentAccessor.getJiraAuthenticationContext().getUser()
+			 log.debug("Changed script user: {$whoisthis2}")
+			 transitUser=whoisthis2
+		 }
+		 
 		 
 		 // Review ---> In Progress
 		 if (status=="Review") {
 			 log.info("Epic in Review, moving back to In Progress")
-			 EpicId=EpicIssue.id
-			 log.debug("EpicID :"+EpicId)
-			 assignee=EpicIssue.getAssignee()
-			 
 			 TargetStateID=ReviewToInProgress // ReviewToInProgress
-			 if (assignee) {
-				 log.debug("Epic has assignee OK:"+assignee)
-				 transitUser=assignee
-				 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
+			 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
 			 }
-			 else {
-				 log.info("Epic Has NO assignee, usign default user")
-				 ComponentAccessor.getJiraAuthenticationContext().setLoggedInUser(util.getUserByName("${AdminUser}"))
-				 whoisthis2=ComponentAccessor.getJiraAuthenticationContext().getUser()
-				 log.debug("Changed script user: {$whoisthis2}")
-				 transitUser=whoisthis2
-				 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
+		 
+		 // QA --> Review ---> In Progress
+		 if (status=="QA") {
+			 log.info("Epic in QA, moving back to Review")
+			 TargetStateID=QAToReview //QAToReview
+			 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
+			 TargetStateID=ReviewToInProgress // ReviewToInProgress
+			 log.info("Epic now in Review, moving back to In Progress")
+			 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
 			 }
-		 }	 
+		 }		 	 
 	 }
 	 else {
 		 log.info("No Epic found for this issues. Exiting")
 		 return
 	 }
- 	}
  
 
 // Move issue to new state using transit ID  
