@@ -53,7 +53,7 @@ This listener will implement "In case Epic has new Story added, it state should 
  
  // CONFIGURATIONS:
  def AdminUser = "mikanokka" // this user must be rights to drive statuses
-
+ def ReviewToInProgress=71   // Review ---> In Progress
  // END OF CONFIGURATIONS
  
  def changeManager = ComponentAccessor.getChangeHistoryManager();
@@ -84,7 +84,7 @@ This listener will implement "In case Epic has new Story added, it state should 
 	 
 	 MutableIssue EpicIssue = issue.getCustomFieldValue(customFieldManager.getCustomFieldObjectByName("Epic Link")) as MutableIssue
 	 if (EpicIssue) {
-		 log.debug("Epic exists for this issue:"+EpicIssue)
+		 log.info("Epic exists for created issue (${issue}),it is:"+EpicIssue)
 		 //def String epicIssue = EpicIssue.getValue(issue)
 		 def status=EpicIssue.getStatus().getName()
 		 log.debug("Current Issue's Epic Status:"+status)
@@ -93,63 +93,56 @@ This listener will implement "In case Epic has new Story added, it state should 
 			 log.debug("Epic In Progress, do nothing")
 		 }
 		 
+		 // Review ---> In Progress
 		 if (status=="Review") {
-			 log.debug("Epic in Review, move back to In Progress")
-			 epicId=EpicIssue.id
-			 log.debug("EpicID :"+epicId)
+			 log.info("Epic in Review, moving back to In Progress")
+			 EpicId=EpicIssue.id
+			 log.debug("EpicID :"+EpicId)
 			 assignee=EpicIssue.getAssignee()
 			 
-			 if (EpicIssue.getAssignee()) {
+			 TargetStateID=ReviewToInProgress // ReviewToInProgress
+			 if (assignee) {
 				 log.debug("Epic has assignee OK:"+assignee)
-			 
-				 // 71 is the transition ID in my workflow
-				 // MUST have assigneed or legal user
-				 IssueService.TransitionValidationResult validationResult =
-				 	issueService.validateTransition(EpicIssue.getAssignee(),
-						 EpicIssue.id, 71 as Integer, issueInputParameters)
-			 
-					 def errorCollection = validationResult.errorCollection
-					 log.error(errorCollection)
-					 if (! errorCollection.hasAnyErrors()) {
-						 issueService.transition(EpicIssue.getAssignee(), validationResult)
-						 log.error("OK")
-					 }
-					 else {
-						 log.error("ERROR")
-					 }
+				 transitUser=assignee
+				 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
 			 }
 			 else {
-				 log.debug("Epic Has NO assignee, usign default user ")
+				 log.info("Epic Has NO assignee, usign default user")
 				 ComponentAccessor.getJiraAuthenticationContext().setLoggedInUser(util.getUserByName("${AdminUser}"))
 				 whoisthis2=ComponentAccessor.getJiraAuthenticationContext().getUser()
 				 log.debug("Changed script user: {$whoisthis2}")
-				 // 71 is the transition ID in my workflow
-				 // MUST have assigneed or legal user
-				 IssueService.TransitionValidationResult validationResult =
-					 issueService.validateTransition(whoisthis2,
-						 EpicIssue.id, 71 as Integer, issueInputParameters)
-			 
-					 def errorCollection = validationResult.errorCollection
-					 log.error(errorCollection)
-					 if (! errorCollection.hasAnyErrors()) {
-						 issueService.transition(whoisthis2, validationResult)
-						 log.error("OK")
-					 }
-					 else {
-						 log.error("ERROR")
-					 }
-				 
-				 
+				 transitUser=whoisthis2
+				 DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters)
 			 }
-		 }
-		 
+		 }	 
 	 }
 	 else {
 		 log.info("No Epic found for this issues. Exiting")
 		 return
 	 }
- }
+ 	}
  
+
+// Move issue to new state using transit ID  
+def DriveEpicState(TargetStateID,transitUser,EpicId,issueService,issueInputParameters) {
+	 // TargetStateID: Hardcoded transit value from workflow current state -----TargetStateID---> New state
+	 // transitUser: User to do the transit
+	 // EpicId: Epic ID to be driven newstate
+	 IssueService.TransitionValidationResult validationResult =
+		 issueService.validateTransition(transitUser,
+			 EpicId, TargetStateID as Integer, issueInputParameters)
+ 
+		 def errorCollection = validationResult.errorCollection
+		 log.error(errorCollection)
+		 if (! errorCollection.hasAnyErrors()) {
+			 issueService.transition(transitUser, validationResult)
+			 log.error("Transit:${TargetStateID} done OK")
+		 }
+		 else {
+			 log.error("ERROR: Transit:${TargetStateID} gone wrong!!")
+		 } 
+	}
+
  
  
  log.debug("---------- EpicStateChanger stopped -----------")
